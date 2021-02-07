@@ -1,160 +1,181 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Security;
 
 namespace DS4Windows
 {
+    [SuppressUnmanagedCodeSecurity]
     class InputMethods
     {
-        private static INPUT[] sendInputs = new INPUT[2]; // will allow for keyboard + mouse/tablet input within one SendInput call, or two mouse events
-        private static object lockob = new object();
-
         public static void MoveCursorBy(int x, int y)
         {
-            lock (lockob)
+            if (x != 0 || y != 0)
             {
-                if (x != 0 || y != 0)
-                {
-                    sendInputs[0].Type = INPUT_MOUSE;
-                    sendInputs[0].Data.Mouse.ExtraInfo = IntPtr.Zero;
-                    sendInputs[0].Data.Mouse.Flags = MOUSEEVENTF_MOVE;
-                    sendInputs[0].Data.Mouse.MouseData = 0;
-                    sendInputs[0].Data.Mouse.Time = 0;
-                    sendInputs[0].Data.Mouse.X = x;
-                    sendInputs[0].Data.Mouse.Y = y;
-                    uint result = SendInput(1, sendInputs, Marshal.SizeOf(sendInputs[0]));
-                }
+                INPUT[] tempInput = new INPUT[1];
+                ref INPUT temp = ref tempInput[0];
+                temp.Type = INPUT_MOUSE;
+                temp.Data.Mouse.ExtraInfo = IntPtr.Zero;
+                temp.Data.Mouse.Flags = MOUSEEVENTF_MOVE;
+                temp.Data.Mouse.MouseData = 0;
+                temp.Data.Mouse.Time = 0;
+                temp.Data.Mouse.X = x;
+                temp.Data.Mouse.Y = y;
+                uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
             }
+        }
+
+        private const double ABSOLUTE_MOUSE_COOR_MAX = 65535.0;
+
+        /// <summary>
+        /// Move the mouse cursor to an absolute position on the virtual desktop
+        /// </summary>
+        /// <param name="x">X coordinate in range of [0.0, 1.0]. 0.0 for left. 1.0 for far right</param>
+        /// <param name="y">Y coordinate in range of [0.0, 1.0]. 0.0 for top. 1.0 for bottom</param>
+        public static void MoveAbsoluteMouse(double x, double y)
+        {
+            INPUT[] tempInput = new INPUT[1];
+            ref INPUT temp = ref tempInput[0];
+            temp.Type = INPUT_MOUSE;
+            temp.Data.Mouse.ExtraInfo = IntPtr.Zero;
+            temp.Data.Mouse.Flags = MOUSEEVENTF_MOVE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE;
+            temp.Data.Mouse.MouseData = 0;
+            temp.Data.Mouse.Time = 0;
+            temp.Data.Mouse.X = (int)(x * ABSOLUTE_MOUSE_COOR_MAX);
+            temp.Data.Mouse.Y = (int)(y * ABSOLUTE_MOUSE_COOR_MAX);
+            uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
         }
 
         public static void MouseWheel(int vertical, int horizontal)
         {
-            lock (lockob)
+            INPUT[] tempInput = new INPUT[2];
+            uint inputs = 0;
+            ref INPUT temp = ref tempInput[inputs];
+            if (vertical != 0)
             {
-                uint inputs = 0;
-                if (vertical != 0)
-                {
-                    sendInputs[inputs].Type = INPUT_MOUSE;
-                    sendInputs[inputs].Data.Mouse.ExtraInfo = IntPtr.Zero;
-                    sendInputs[inputs].Data.Mouse.Flags = MOUSEEVENTF_WHEEL;
-                    sendInputs[inputs].Data.Mouse.MouseData = (uint)vertical;
-                    sendInputs[inputs].Data.Mouse.Time = 0;
-                    sendInputs[inputs].Data.Mouse.X = 0;
-                    sendInputs[inputs].Data.Mouse.Y = 0;
-                    inputs++;
-                }
-
-                if (horizontal != 0)
-                {
-                    sendInputs[inputs].Type = INPUT_MOUSE;
-                    sendInputs[inputs].Data.Mouse.ExtraInfo = IntPtr.Zero;
-                    sendInputs[inputs].Data.Mouse.Flags = MOUSEEVENTF_HWHEEL;
-                    sendInputs[inputs].Data.Mouse.MouseData = (uint)horizontal;
-                    sendInputs[inputs].Data.Mouse.Time = 0;
-                    sendInputs[inputs].Data.Mouse.X = 0;
-                    sendInputs[inputs].Data.Mouse.Y = 0;
-                    inputs++;
-                }
-
-                SendInput(inputs, sendInputs, (int)inputs * Marshal.SizeOf(sendInputs[0]));
+                temp.Type = INPUT_MOUSE;
+                temp.Data.Mouse.ExtraInfo = IntPtr.Zero;
+                temp.Data.Mouse.Flags = MOUSEEVENTF_WHEEL;
+                temp.Data.Mouse.MouseData = (uint)vertical;
+                temp.Data.Mouse.Time = 0;
+                temp.Data.Mouse.X = 0;
+                temp.Data.Mouse.Y = 0;
+                inputs++;
             }
+
+            if (horizontal != 0)
+            {
+                temp = ref tempInput[inputs];
+                temp.Type = INPUT_MOUSE;
+                temp.Data.Mouse.ExtraInfo = IntPtr.Zero;
+                temp.Data.Mouse.Flags = MOUSEEVENTF_HWHEEL;
+                temp.Data.Mouse.MouseData = (uint)horizontal;
+                temp.Data.Mouse.Time = 0;
+                temp.Data.Mouse.X = 0;
+                temp.Data.Mouse.Y = 0;
+                inputs++;
+            }
+
+            SendInput(inputs, tempInput, (int)inputs * Marshal.SizeOf(tempInput[0]));
         }
 
         public static void MouseEvent(uint mouseButton)
         {
-            lock (lockob)
-            {
-                sendInputs[0].Type = INPUT_MOUSE;
-                sendInputs[0].Data.Mouse.ExtraInfo = IntPtr.Zero;
-                sendInputs[0].Data.Mouse.Flags = mouseButton;
-                sendInputs[0].Data.Mouse.MouseData = 0;
-                sendInputs[0].Data.Mouse.Time = 0;
-                sendInputs[0].Data.Mouse.X = 0;
-                sendInputs[0].Data.Mouse.Y = 0;
-                uint result = SendInput(1, sendInputs, Marshal.SizeOf(sendInputs[0]));
-            }
+            INPUT[] tempInput = new INPUT[1];
+            ref INPUT temp = ref tempInput[0];
+            temp.Type = INPUT_MOUSE;
+            temp.Data.Mouse.ExtraInfo = IntPtr.Zero;
+            temp.Data.Mouse.Flags = mouseButton;
+            temp.Data.Mouse.MouseData = 0;
+            temp.Data.Mouse.Time = 0;
+            temp.Data.Mouse.X = 0;
+            temp.Data.Mouse.Y = 0;
+            uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
         }
 
         public static void MouseEvent(uint mouseButton, int type)
         {
-            lock (lockob)
-            {
-                sendInputs[0].Type = INPUT_MOUSE;
-                sendInputs[0].Data.Mouse.ExtraInfo = IntPtr.Zero;
-                sendInputs[0].Data.Mouse.Flags = mouseButton;
-                sendInputs[0].Data.Mouse.MouseData = (uint)type;
-                sendInputs[0].Data.Mouse.Time = 0;
-                sendInputs[0].Data.Mouse.X = 0;
-                sendInputs[0].Data.Mouse.Y = 0;
-                uint result = SendInput(1, sendInputs, Marshal.SizeOf(sendInputs[0]));
-            }
+            INPUT[] tempInput = new INPUT[1];
+            ref INPUT temp = ref tempInput[0];
+            temp.Type = INPUT_MOUSE;
+            temp.Data.Mouse.ExtraInfo = IntPtr.Zero;
+            temp.Data.Mouse.Flags = mouseButton;
+            temp.Data.Mouse.MouseData = (uint)type;
+            temp.Data.Mouse.Time = 0;
+            temp.Data.Mouse.X = 0;
+            temp.Data.Mouse.Y = 0;
+            uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
         }
 
         public static void performSCKeyPress(ushort key)
         {
-            lock (lockob)
-            {
-                sendInputs[0].Type = INPUT_KEYBOARD;
-                sendInputs[0].Data.Keyboard.ExtraInfo = IntPtr.Zero;
-                sendInputs[0].Data.Keyboard.Flags = KEYEVENTF_SCANCODE;
-                sendInputs[0].Data.Keyboard.Scan = MapVirtualKey(key, MAPVK_VK_TO_VSC);
-                sendInputs[0].Data.Keyboard.Time = 0;
-                sendInputs[0].Data.Keyboard.Vk = key;
-                uint result = SendInput(1, sendInputs, Marshal.SizeOf(sendInputs[0]));
-            }
+            INPUT[] tempInput = new INPUT[1];
+            ref INPUT temp = ref tempInput[0];
+            ushort scancode = scancodeFromVK(key);
+            bool extended = (scancode & 0x100) != 0;
+            uint curflags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
+
+            temp.Type = INPUT_KEYBOARD;
+            temp.Data.Keyboard.ExtraInfo = IntPtr.Zero;
+            temp.Data.Keyboard.Flags = KEYEVENTF_SCANCODE | curflags;
+            temp.Data.Keyboard.Scan = scancode;
+            temp.Data.Keyboard.Time = 0;
+            temp.Data.Keyboard.Vk = key;
+            uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
         }
 
         public static void performKeyPress(ushort key)
         {
-            lock (lockob)
-            {
-                ushort scancode = scancodeFromVK(key);
-                bool extended = (scancode & 0x100) != 0;
-                uint curflags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
+            INPUT[] tempInput = new INPUT[1];
+            ref INPUT temp = ref tempInput[0];
+            ushort scancode = scancodeFromVK(key);
+            bool extended = (scancode & 0x100) != 0;
+            uint curflags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
 
-                sendInputs[0].Type = INPUT_KEYBOARD;
-                sendInputs[0].Data.Keyboard.ExtraInfo = IntPtr.Zero;
-                sendInputs[0].Data.Keyboard.Flags = curflags;
-                sendInputs[0].Data.Keyboard.Scan = scancode;
-                //sendInputs[0].Data.Keyboard.Flags = 1;
-                //sendInputs[0].Data.Keyboard.Scan = 0;
-                sendInputs[0].Data.Keyboard.Time = 0;
-                sendInputs[0].Data.Keyboard.Vk = key;
-                uint result = SendInput(1, sendInputs, Marshal.SizeOf(sendInputs[0]));
-            }
+            temp.Type = INPUT_KEYBOARD;
+            temp.Data.Keyboard.ExtraInfo = IntPtr.Zero;
+            temp.Data.Keyboard.Flags = curflags;
+            temp.Data.Keyboard.Scan = scancode;
+            //sendInputs[0].Data.Keyboard.Flags = 1;
+            //sendInputs[0].Data.Keyboard.Scan = 0;
+            temp.Data.Keyboard.Time = 0;
+            temp.Data.Keyboard.Vk = key;
+            uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
         }
 
         public static void performSCKeyRelease(ushort key)
         {
-            lock (lockob)
-            {
-                sendInputs[0].Type = INPUT_KEYBOARD;
-                sendInputs[0].Data.Keyboard.ExtraInfo = IntPtr.Zero;
-                sendInputs[0].Data.Keyboard.Flags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
-                sendInputs[0].Data.Keyboard.Scan = MapVirtualKey(key, MAPVK_VK_TO_VSC);
-                sendInputs[0].Data.Keyboard.Time = 0;
-                //sendInputs[0].Data.Keyboard.Vk = MapVirtualKey(key, MAPVK_VK_TO_VSC);
-                uint result = SendInput(1, sendInputs, Marshal.SizeOf(sendInputs[0]));
-            }
+            INPUT[] tempInput = new INPUT[1];
+            ref INPUT temp = ref tempInput[0];
+            ushort scancode = scancodeFromVK(key);
+            bool extended = (scancode & 0x100) != 0;
+            uint curflags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
+
+            temp.Type = INPUT_KEYBOARD;
+            temp.Data.Keyboard.ExtraInfo = IntPtr.Zero;
+            temp.Data.Keyboard.Flags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP | curflags;
+            temp.Data.Keyboard.Scan = scancode;
+            temp.Data.Keyboard.Time = 0;
+            //sendInputs[0].Data.Keyboard.Vk = MapVirtualKey(key, MAPVK_VK_TO_VSC);
+            uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
         }
 
         public static void performKeyRelease(ushort key)
         {
-            lock (lockob)
-            {
-                ushort scancode = scancodeFromVK(key);
-                bool extended = (scancode & 0x100) != 0;
-                uint curflags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
+            INPUT[] tempInput = new INPUT[1];
+            ref INPUT temp = ref tempInput[0];
+            ushort scancode = scancodeFromVK(key);
+            bool extended = (scancode & 0x100) != 0;
+            uint curflags = extended ? KEYEVENTF_EXTENDEDKEY : 0;
 
-                sendInputs[0].Type = INPUT_KEYBOARD;
-                sendInputs[0].Data.Keyboard.ExtraInfo = IntPtr.Zero;
-                sendInputs[0].Data.Keyboard.Flags = curflags | KEYEVENTF_KEYUP;
-                sendInputs[0].Data.Keyboard.Scan = scancode;
-                //sendInputs[0].Data.Keyboard.Flags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
-                //sendInputs[0].Data.Keyboard.Scan = 0;
-                sendInputs[0].Data.Keyboard.Time = 0;
-                sendInputs[0].Data.Keyboard.Vk = key;
-                uint result = SendInput(1, sendInputs, Marshal.SizeOf(sendInputs[0]));
-            }
+            temp.Type = INPUT_KEYBOARD;
+            temp.Data.Keyboard.ExtraInfo = IntPtr.Zero;
+            temp.Data.Keyboard.Flags = curflags | KEYEVENTF_KEYUP;
+            temp.Data.Keyboard.Scan = scancode;
+            //sendInputs[0].Data.Keyboard.Flags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
+            //sendInputs[0].Data.Keyboard.Scan = 0;
+            temp.Data.Keyboard.Time = 0;
+            temp.Data.Keyboard.Vk = key;
+            uint result = SendInput(1, tempInput, Marshal.SizeOf(tempInput[0]));
         }
 
         private static ushort scancodeFromVK(uint vkey)
@@ -274,6 +295,7 @@ namespace DS4Windows
             MOUSEEVENTF_RIGHTDOWN = 8, MOUSEEVENTF_RIGHTUP = 16,
             MOUSEEVENTF_MIDDLEDOWN = 32, MOUSEEVENTF_MIDDLEUP = 64,
             MOUSEEVENTF_XBUTTONDOWN = 128, MOUSEEVENTF_XBUTTONUP = 256,
+            MOUSEEVENTF_ABSOLUTE = 0x8000, MOUSEEVENTF_VIRTUALDESK = 0x4000,
             KEYEVENTF_EXTENDEDKEY = 1, KEYEVENTF_KEYUP = 2, MOUSEEVENTF_WHEEL = 0x0800, MOUSEEVENTF_HWHEEL = 0x1000,
             MOUSEEVENTF_MIDDLEWDOWN = 0x0020, MOUSEEVENTF_MIDDLEWUP = 0x0040,
             KEYEVENTF_SCANCODE = 0x0008, MAPVK_VK_TO_VSC = 0, KEYEVENTF_UNICODE = 0x0004, EXTENDED_FLAG = 0x100;

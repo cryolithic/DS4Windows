@@ -20,19 +20,23 @@ namespace DS4Windows
 
         private readonly string _description;
         private readonly string _devicePath;
+        private readonly string _parentPath;
         private readonly HidDeviceAttributes _deviceAttributes;
 
         private readonly HidDeviceCapabilities _deviceCapabilities;
         private bool _monitorDeviceEvents;
         private string serial = null;
-        internal HidDevice(string devicePath, string description = null)
+        private const string BLANK_SERIAL = "00:00:00:00:00:00";
+
+        internal HidDevice(string devicePath, string description = null, string parentPath = null)
         {
             _devicePath = devicePath;
             _description = description;
+            _parentPath = parentPath;
 
             try
             {
-                var hidHandle = OpenHandle(_devicePath, false);
+                var hidHandle = OpenHandle(_devicePath, false, enumerate: true);
 
                 _deviceAttributes = GetDeviceAttributes(hidHandle);
                 _deviceCapabilities = GetDeviceCapabilities(hidHandle);
@@ -55,6 +59,7 @@ namespace DS4Windows
         public HidDeviceCapabilities Capabilities { get { return _deviceCapabilities; } }
         public HidDeviceAttributes Attributes { get { return _deviceAttributes; } }
         public string DevicePath { get { return _devicePath; } }
+        public string ParentPath { get => _parentPath; }
 
         public override string ToString()
         {
@@ -71,7 +76,7 @@ namespace DS4Windows
             try
             {
                 if (safeReadHandle == null || safeReadHandle.IsInvalid)
-                    safeReadHandle = OpenHandle(_devicePath, isExclusive);
+                    safeReadHandle = OpenHandle(_devicePath, isExclusive, enumerate: false);
             }
             catch (Exception exception)
             {
@@ -125,7 +130,7 @@ namespace DS4Windows
         public bool ReadInputReport(byte[] data)
         {
             if (safeReadHandle == null)
-                safeReadHandle = OpenHandle(_devicePath, true);
+                safeReadHandle = OpenHandle(_devicePath, true, enumerate: false);
             return NativeMethods.HidD_GetInputReport(safeReadHandle, data, data.Length);
         }
 
@@ -223,7 +228,7 @@ namespace DS4Windows
         public ReadStatus ReadFile(byte[] inputBuffer)
         {
             if (safeReadHandle == null)
-                safeReadHandle = OpenHandle(_devicePath, true);
+                safeReadHandle = OpenHandle(_devicePath, true, enumerate: false);
             try
             {
                 uint bytesRead;
@@ -266,7 +271,7 @@ namespace DS4Windows
             try
             {
                 if (safeReadHandle == null)
-                    safeReadHandle = OpenHandle(_devicePath, true);
+                    safeReadHandle = OpenHandle(_devicePath, true, enumerate: false);
                 if (fileStream == null && !safeReadHandle.IsInvalid)
                     fileStream = new FileStream(safeReadHandle, FileAccess.ReadWrite, inputBuffer.Length, true);
 
@@ -316,7 +321,7 @@ namespace DS4Windows
             try
             {
                 if (safeReadHandle == null)
-                    safeReadHandle = OpenHandle(_devicePath, true);
+                    safeReadHandle = OpenHandle(_devicePath, true, enumerate: false);
                 if (fileStream == null && !safeReadHandle.IsInvalid)
                     fileStream = new FileStream(safeReadHandle, FileAccess.ReadWrite, inputBuffer.Length, true);
 
@@ -362,7 +367,7 @@ namespace DS4Windows
         {
             if (safeReadHandle == null)
             {
-                safeReadHandle = OpenHandle(_devicePath, true);
+                safeReadHandle = OpenHandle(_devicePath, true, enumerate: false);
             }
 
             if (NativeMethods.HidD_SetOutputReport(safeReadHandle, outputBuffer, outputBuffer.Length))
@@ -391,7 +396,7 @@ namespace DS4Windows
             {
                 if (safeReadHandle == null)
                 {
-                    safeReadHandle = OpenHandle(_devicePath, true);
+                    safeReadHandle = OpenHandle(_devicePath, true, enumerate: false);
                 }
                 if (fileStream == null && !safeReadHandle.IsInvalid)
                 {
@@ -420,7 +425,7 @@ namespace DS4Windows
             {
                 if (safeReadHandle == null)
                 {
-                    safeReadHandle = OpenHandle(_devicePath, true);
+                    safeReadHandle = OpenHandle(_devicePath, true, enumerate: false);
                 }
                 if (fileStream == null && !safeReadHandle.IsInvalid)
                 {
@@ -444,17 +449,18 @@ namespace DS4Windows
 
         }
 
-        private SafeFileHandle OpenHandle(String devicePathName, Boolean isExclusive)
+        private SafeFileHandle OpenHandle(String devicePathName, Boolean isExclusive, bool enumerate)
         {
             SafeFileHandle hidHandle;
+            uint access = enumerate ? 0 : NativeMethods.GENERIC_READ | NativeMethods.GENERIC_WRITE;
 
             if (isExclusive)
             {
-                hidHandle = NativeMethods.CreateFile(devicePathName, NativeMethods.GENERIC_READ | NativeMethods.GENERIC_WRITE, 0, IntPtr.Zero, NativeMethods.OpenExisting, 0x20000000 | 0x80000000 | NativeMethods.FILE_FLAG_OVERLAPPED, 0);
+                hidHandle = NativeMethods.CreateFile(devicePathName, access, 0, IntPtr.Zero, NativeMethods.OpenExisting, NativeMethods.FILE_FLAG_NO_BUFFERING | NativeMethods.FILE_FLAG_WRITE_THROUGH | NativeMethods.FILE_ATTRIBUTE_TEMPORARY | NativeMethods.FILE_FLAG_OVERLAPPED, 0);
             }
             else
             {
-                hidHandle = NativeMethods.CreateFile(devicePathName, NativeMethods.GENERIC_READ | NativeMethods.GENERIC_WRITE, NativeMethods.FILE_SHARE_READ | NativeMethods.FILE_SHARE_WRITE, IntPtr.Zero, NativeMethods.OpenExisting, 0x20000000 | 0x80000000 | NativeMethods.FILE_FLAG_OVERLAPPED, 0);
+                hidHandle = NativeMethods.CreateFile(devicePathName, access, NativeMethods.FILE_SHARE_READ | NativeMethods.FILE_SHARE_WRITE, IntPtr.Zero, NativeMethods.OpenExisting, NativeMethods.FILE_FLAG_NO_BUFFERING | NativeMethods.FILE_FLAG_WRITE_THROUGH | NativeMethods.FILE_ATTRIBUTE_TEMPORARY | NativeMethods.FILE_FLAG_OVERLAPPED, 0);
             }
 
             return hidHandle;
@@ -470,18 +476,23 @@ namespace DS4Windows
             serial = null;
         }
 
-        public string readSerial()
+        public string ReadSerial(byte featureID = 18)
         {
             if (serial != null)
                 return serial;
 
+            // Some devices don't have MAC address (especially gamepads with USB only suports in PC). If the serial number reading fails 
+            // then use dummy zero MAC address, because there is a good chance the gamepad stll works in DS4Windows app (the code would throw
+            // an index out of bounds exception anyway without IF-THEN-ELSE checks after trying to read a serial number).
+
             if (Capabilities.InputReportByteLength == 64)
             {
-                byte[] buffer = new byte[16];
-                buffer[0] = 18;
-                readFeatureData(buffer);                
-                serial =  String.Format("{0:X02}:{1:X02}:{2:X02}:{3:X02}:{4:X02}:{5:X02}", buffer[6], buffer[5], buffer[4], buffer[3], buffer[2], buffer[1]);
-                return serial;
+                byte[] buffer = new byte[64];
+                //buffer[0] = 18;
+                buffer[0] = featureID;
+                if (readFeatureData(buffer))
+                    serial = String.Format("{0:X02}:{1:X02}:{2:X02}:{3:X02}:{4:X02}:{5:X02}",
+                        buffer[6], buffer[5], buffer[4], buffer[3], buffer[2], buffer[1]);
             }
             else
             {
@@ -491,12 +502,61 @@ namespace DS4Windows
 #else
                 uint bufferLen = 126;
 #endif
-                NativeMethods.HidD_GetSerialNumberString(safeReadHandle.DangerousGetHandle(), buffer, bufferLen);
-                string MACAddr = System.Text.Encoding.Unicode.GetString(buffer).Replace("\0", string.Empty).ToUpper();
-                MACAddr = $"{MACAddr[0]}{MACAddr[1]}:{MACAddr[2]}{MACAddr[3]}:{MACAddr[4]}{MACAddr[5]}:{MACAddr[6]}{MACAddr[7]}:{MACAddr[8]}{MACAddr[9]}:{MACAddr[10]}{MACAddr[11]}";
-                serial = MACAddr;
-                return serial;
+                if (NativeMethods.HidD_GetSerialNumberString(safeReadHandle.DangerousGetHandle(), buffer, bufferLen))
+                {
+                    string MACAddr = System.Text.Encoding.Unicode.GetString(buffer).Replace("\0", string.Empty).ToUpper();
+                    MACAddr = $"{MACAddr[0]}{MACAddr[1]}:{MACAddr[2]}{MACAddr[3]}:{MACAddr[4]}{MACAddr[5]}:{MACAddr[6]}{MACAddr[7]}:{MACAddr[8]}{MACAddr[9]}:{MACAddr[10]}{MACAddr[11]}";
+                    serial = MACAddr;
+                }
             }
+
+            // If serial# reading failed then generate a dummy MAC address based on HID device path (WinOS generated runtime unique value based on connected usb port and hub or BT channel).
+            // The device path remains the same as long the gamepad is always connected to the same usb/BT port, but may be different in other usb ports. Therefore this value is unique
+            // as long the same device is always connected to the same usb port.
+            if (serial == null)
+            {
+                string MACAddr = string.Empty;
+
+                AppLogger.LogToGui($"WARNING: Failed to read serial# from a gamepad ({this._deviceAttributes.VendorHexId}/{this._deviceAttributes.ProductHexId}). Generating MAC address from a device path. From now on you should connect this gamepad always into the same USB port or BT pairing host to keep the same device path.", true);
+
+                try
+                {
+                    // Substring: \\?\hid#vid_054c&pid_09cc&mi_03#7&1f882A25&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030} -> \\?\hid#vid_054c&pid_09cc&mi_03#7&1f882A25&0&0001#
+                    int endPos = this.DevicePath.LastIndexOf('{');
+                    if (endPos < 0)
+                        endPos = this.DevicePath.Length;
+
+                    // String array: \\?\hid#vid_054c&pid_09cc&mi_03#7&1f882A25&0&0001# -> [0]=\\?\hidvid_054c, [1]=pid_09cc, [2]=mi_037, [3]=1f882A25, [4]=0, [5]=0001
+                    string[] devPathItems = this.DevicePath.Substring(0, endPos).Replace("#", "").Replace("-", "").Replace("{", "").Replace("}", "").Split('&');
+
+                    if (devPathItems.Length >= 3)
+                        MACAddr = devPathItems[devPathItems.Length - 3].ToUpper()                   // 1f882A25
+                                  + devPathItems[devPathItems.Length - 2].ToUpper()                 // 0
+                                  + devPathItems[devPathItems.Length - 1].TrimStart('0').ToUpper(); // 0001 -> 1
+                    else if (devPathItems.Length >= 1)
+                        // Device and usb hub and port identifiers missing in devicePath string. Fallback to use vendor and product ID values and 
+                        // take a number from the last part of the devicePath. Hopefully the last part is a usb port number as it usually should be.
+                        MACAddr = this._deviceAttributes.VendorId.ToString("X4")
+                                  + this._deviceAttributes.ProductId.ToString("X4")
+                                  + devPathItems[devPathItems.Length - 1].TrimStart('0').ToUpper();
+
+                    if (!string.IsNullOrEmpty(MACAddr))
+                    {
+                        MACAddr = MACAddr.PadRight(12, '0');
+                        serial = $"{MACAddr[0]}{MACAddr[1]}:{MACAddr[2]}{MACAddr[3]}:{MACAddr[4]}{MACAddr[5]}:{MACAddr[6]}{MACAddr[7]}:{MACAddr[8]}{MACAddr[9]}:{MACAddr[10]}{MACAddr[11]}";
+                    }
+                    else
+                        // Hmm... Shold never come here. Strange format in devicePath because all identifier items of devicePath string are missing.
+                        serial = BLANK_SERIAL;
+                }
+                catch (Exception e)
+                {
+                    AppLogger.LogToGui($"ERROR: Failed to generate runtime MAC address from device path {this.DevicePath}. {e.Message}", true);
+                    serial = BLANK_SERIAL;
+                }
+            }
+
+            return serial;
         }
     }
 }
